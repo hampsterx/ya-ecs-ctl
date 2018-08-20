@@ -1,7 +1,20 @@
 # Yet Another ECS CTL tool
 
+```
+pip install ya-ecs-ctl
 
 ```
+
+Adds binary:
+
+
+```
+ecs
+
+```
+
+```
+
 Usage: main.py [OPTIONS] COMMAND [ARGS]...
 
 Options:
