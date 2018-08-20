@@ -310,9 +310,6 @@ def print_tasks(tasks):
 
         return " ".join(result)
 
-    #pprint.pprint(tasks[0])
-    #raise
-
     data = [[
         t['group'],
         format_container_tasks(t['containers']),
@@ -383,11 +380,14 @@ def delete_service(cluster, service_name):
     return True
 
 
-def create_service(cluster, service_name, task_definition=None, desired_count=None):
+def create_service(cluster, service_name, placement_strategy=None, task_definition=None, desired_count=None):
     params = {}
 
     if desired_count is not None:
         params['desiredCount'] = desired_count
+
+    if placement_strategy is not None:
+        params['placementStrategy'] = placement_strategy
 
     params['taskDefinition'] = task_definition
 
@@ -476,8 +476,6 @@ def cmd_list_tasks(service):
     events = service_info['events']
 
     print_task_events(events)
-
-    #pprint.pprint(service_info)
 
     task_ids = get_task_ids_by_family_and_cluster(family=service, cluster=cluster)
 
@@ -586,12 +584,12 @@ def cmd_stop_task(task):
 def get_default_region():
     return boto3.session.Session().region_name
 
-def get_container_defs_from_file(file_path, cluster_name):
+def get_task_def_from_file(file_path, cluster_name):
 
     with open(file_path, 'r') as f:
         service_def = yaml.load(f)
 
-    containerDefinitions =  service_def['TaskDefinition']['Properties']['ContainerDefinitions']
+    task_def =  service_def['TaskDefinition']
 
     def lowerCaseFirstLetter(str):
         return str[0].lower() + str[1:]
@@ -612,7 +610,7 @@ def get_container_defs_from_file(file_path, cluster_name):
             return obj
         return new
 
-    containerDefinitions = [change_keys(c, convert=lowerCaseFirstLetter) for c in containerDefinitions]
+    task_def = change_keys(task_def, convert=lowerCaseFirstLetter)
 
     region = get_default_region()
 
@@ -620,15 +618,15 @@ def get_container_defs_from_file(file_path, cluster_name):
         'logDriver' : 'awslogs',
         'options' : {
             'awslogs-group': "{}-services".format(cluster_name),
-            'awslogs-stream-prefix': containerDefinitions[0]['name'],
+            'awslogs-stream-prefix': task_def['family'],
             'awslogs-region': region
         }
     }
 
-    containerDefinitions[0]['logConfiguration'] = logConfig
+    for cd in task_def['containerDefinitions']:
+        cd['logConfiguration'] = logConfig
 
-    #pprint.pprint(containerDefinitions)
-    return containerDefinitions
+    return task_def
 
 def create_log_group(name):
     result = logs.describe_log_groups(logGroupNamePrefix=name)['logGroups']
@@ -641,16 +639,16 @@ def create_log_group(name):
     print(fg('green') + "\n\tCreated log group {}".format(name) + reset)
 
 
-def register_task_def(family, containerDefinitions):
+def register_task_def(task_def):
 
     # Ensure log group exists (or will fail and be hard to diagnose)
-    log_groups = list(set([c['logConfiguration']['options']['awslogs-group'] for c in containerDefinitions
+    log_groups = list(set([c['logConfiguration']['options']['awslogs-group'] for c in task_def['containerDefinitions']
                            if c.get('logConfiguration', {}).get('logDriver') == 'awslogs']))
 
     for lg in log_groups:
         create_log_group(lg)
 
-    result = ecs.register_task_definition(family=family, containerDefinitions=containerDefinitions)
+    result = ecs.register_task_definition(**task_def)
 
     if result['ResponseMetadata']['HTTPStatusCode'] != 200:
         print(result['ResponseMetadata'])
@@ -666,11 +664,10 @@ def cmd_register(name):
 
     cluster = get_default_cluster()
 
-    containerDefinitions = get_container_defs_from_file("./services/{}.yaml".format(name), cluster)
+    task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
+    rev = register_task_def(task_def)
 
-    revision = register_task_def(family=name, containerDefinitions=containerDefinitions)
-
-    print(fg('green') + "\n\t{} now at revision {}".format(name, revision) + reset)
+    print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
 
 
 @main.command(name='scale')
@@ -707,13 +704,21 @@ def cmd_create_service(name, rev, desired):
     cluster = get_default_cluster()
 
     if not rev:
-        containerDefinitions = get_container_defs_from_file("./services/{}.yaml".format(name), cluster)
-        rev = register_task_def(family=name, containerDefinitions=containerDefinitions)
+        task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
+        rev = register_task_def(task_def)
+
+    # todo: not hardcode this!
+    placement_strategy = [
+        {
+            'type': 'spread',
+            'field': 'attribute:ecs.availability-zone'
+        }
+    ]
 
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tCreating {} with revision {}".format(name, rev) + reset)
 
-    create_service(task_definition=taskdef, cluster=cluster, desired_count=desired, service_name=name)
+    create_service(task_definition=taskdef, placement_strategy=placement_strategy, cluster=cluster, desired_count=desired, service_name=name)
 
 
 @main.command(name='update')
@@ -726,8 +731,9 @@ def cmd_update_service(name, rev, desired):
     cluster = get_default_cluster()
 
     if not rev:
-        containerDefinitions = get_container_defs_from_file("./services/{}.yaml".format(name), cluster)
-        rev = register_task_def(family=name, containerDefinitions=containerDefinitions)
+        task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
+        rev = register_task_def(task_def)
+
 
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tUpdating {} using revision {}".format(name, rev) + reset)

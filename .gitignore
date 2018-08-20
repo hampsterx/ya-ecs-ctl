@@ -5,3 +5,5 @@ dist
 build
 notes.txt
 *.yaml
+services
+*.conf
