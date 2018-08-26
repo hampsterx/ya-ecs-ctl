@@ -433,68 +433,50 @@ def main():
     pass
 
 
-@main.command(name='clusters')
-def cmd_clusters():
+@main.group(name='cluster')
+def cmd_cluster():
+    """
+    Interact with Cluster
+    """
+    pass
+
+@cmd_cluster.command(name='ls')
+def cmd_cluster_ls():
     """Display Clusters Info"""
     cluster_ids = get_cluster_ids(ecs)
     clusters_info = get_clusters_info(cluster_ids)
 
     print_clusters_info(clusters_info)
 
-@main.command(name='switch-cluster')
-def cmd_switch_cluster():
+@cmd_cluster.command(name='switch')
+@click.option('-n', help="Name of Cluster")
+def cmd_switch_cluster(n):
     """Switch Default Cluster"""
-    settings.setsave('cluster', None)
+
+    cluster_name = None
+
+    if n:
+        cluster_ids = get_cluster_ids(ecs)
+        clusters_info = get_clusters_info(cluster_ids)
+        cluster_names = [c['clusterName'] for c in clusters_info]
+        if n in cluster_names:
+            cluster_name = n
+
+    settings.setsave('cluster', cluster_name)
 
     get_default_cluster()
 
 
-@main.command(name='list')
-def cmd_list_services():
-    """List Services"""
 
-    cluster = get_default_cluster()
-
-    services = get_services_by_cluster_name(cluster)
-    print_services(services)
-
-@main.command(name='tasks')
-@click.argument('service')
-def cmd_list_tasks(service):
-    """List Tasks for Service """
-
-    cluster = get_default_cluster()
-
-    service_info = get_service_by_name(service, cluster)
-
-    print_services([service_info])
-
-    task_def_list = get_task_definitions(family_prefix=service)
-
-    print_task_def_list(task_def_list)
-
-    events = service_info['events']
-
-    print_task_events(events)
-
-    task_ids = get_task_ids_by_family_and_cluster(family=service, cluster=cluster)
-
-    if task_ids:
-        tasks = get_tasks_by_ids_and_cluster(task_ids, cluster)
-
-        container_instance_ids = [t['containerInstanceArn'] for t in tasks]
-
-        results = get_container_instances_by_ids(ids=container_instance_ids, cluster=cluster)
-
-        container_instances_dict = {c['containerInstanceArn']:c for c in results}
-
-        for t in tasks:
-            t['container_instance'] = container_instances_dict[t['containerInstanceArn']]
-
-        print_tasks(tasks)
+@main.group(name='ci')
+def cmd_container_instances():
+    """
+    Interact with Container Instances
+    """
+    pass
 
 
-@main.command(name='drain-container-instance')
+@cmd_container_instances.command(name='drain')
 @click.argument('name')
 def cmd_drain_container_instances(name):
     """Set a container Instance to DRAIN"""
@@ -523,8 +505,8 @@ def cmd_drain_container_instances(name):
         raise
 
 
-@main.command(name='container-instances')
-def cmd_container_instances():
+@cmd_container_instances.command(name='ls')
+def cmd_container_instances_ls():
     """List container Instances"""
 
     cluster = get_default_cluster()
@@ -534,8 +516,16 @@ def cmd_container_instances():
     print_container_instances(instances)
 
 
-@main.command(name='ec2-instances')
-def cmd_ec2_instances():
+@main.group(name='ec2')
+def cmd_ec2():
+    """
+    Interact with EC2 Instances
+    """
+    pass
+
+
+@cmd_ec2.command(name='ls')
+def cmd_ec2_instances_ls():
     """List ec2 Instances"""
 
     instances = get_ec2_instances()
@@ -544,7 +534,28 @@ def cmd_ec2_instances():
 
 
 
-@main.command(name='start-task')
+@main.group(name='task')
+def cmd_task():
+    """
+    Interact with Task
+    """
+    pass
+
+
+@cmd_task.command(name='register')
+@click.argument('name')
+def cmd_register(name):
+    """Register task definition"""
+
+    cluster = get_default_cluster()
+
+    task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
+    rev = register_task_def(task_def)
+
+    print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
+
+
+@cmd_task.command(name='start')
 @click.argument('taskdefinition')
 @click.argument('containerInstance')
 def cmd_start_task(taskdefinition, containerinstance):
@@ -566,7 +577,7 @@ def cmd_start_task(taskdefinition, containerinstance):
 
     print(fg('green') + "\n\tStarted {} task {}".format(taskdefinition, task['taskArn'].split(':task/')[1]) + reset)
 
-@main.command(name='stop-task')
+@cmd_task.command(name='stop')
 @click.argument('task')
 def cmd_stop_task(task):
     """Stop task"""
@@ -657,20 +668,61 @@ def register_task_def(task_def):
     return result['taskDefinition']['revision']
 
 
-@main.command(name='register')
-@click.argument('name')
-def cmd_register(name):
-    """Register task definition"""
+@main.group(name='service')
+def cmd_service():
+    """
+    Interact with Service
+    """
+    pass
+
+
+@cmd_service.command(name='ls')
+def cmd_list_services():
+    """List Services"""
 
     cluster = get_default_cluster()
 
-    task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
-    rev = register_task_def(task_def)
-
-    print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
+    services = get_services_by_cluster_name(cluster)
+    print_services(services)
 
 
-@main.command(name='scale')
+@cmd_service.command(name='tasks')
+@click.argument('service')
+def cmd_list_tasks(service):
+    """List Tasks for Service """
+
+    cluster = get_default_cluster()
+
+    service_info = get_service_by_name(service, cluster)
+
+    print_services([service_info])
+
+    task_def_list = get_task_definitions(family_prefix=service)
+
+    print_task_def_list(task_def_list)
+
+    events = service_info['events']
+
+    print_task_events(events)
+
+    task_ids = get_task_ids_by_family_and_cluster(family=service, cluster=cluster)
+
+    if task_ids:
+        tasks = get_tasks_by_ids_and_cluster(task_ids, cluster)
+
+        container_instance_ids = [t['containerInstanceArn'] for t in tasks]
+
+        results = get_container_instances_by_ids(ids=container_instance_ids, cluster=cluster)
+
+        container_instances_dict = {c['containerInstanceArn']:c for c in results}
+
+        for t in tasks:
+            t['container_instance'] = container_instances_dict[t['containerInstanceArn']]
+
+        print_tasks(tasks)
+
+
+@cmd_service.command(name='scale')
 @click.argument('name')
 @click.argument('desired', type=click.IntRange(0, 16))
 def cmd_scale(name, desired):
@@ -683,7 +735,7 @@ def cmd_scale(name, desired):
     update_service(desired_count=desired, cluster=cluster, service_name=name)
 
 
-@main.command(name='redeploy')
+@cmd_service.command(name='redeploy')
 @click.argument('name')
 def cmd_redeploy(name):
     """Force redeployment of a Service"""
@@ -694,7 +746,8 @@ def cmd_redeploy(name):
 
     update_service(force_new_deployment=True, cluster=cluster, service_name=name)
 
-@main.command(name='create')
+
+@cmd_service.command(name='create')
 @click.argument('name')
 @click.option('--rev', type=click.IntRange(0, 1000))
 @click.option('--desired', default=2, type=click.IntRange(1, 16))
@@ -721,7 +774,7 @@ def cmd_create_service(name, rev, desired):
     create_service(task_definition=taskdef, placement_strategy=placement_strategy, cluster=cluster, desired_count=desired, service_name=name)
 
 
-@main.command(name='update')
+@cmd_service.command(name='update')
 @click.argument('name')
 @click.option('--rev', type=click.IntRange(0, 1000))
 @click.option('--desired', help="Desired Count", default=2, type=click.IntRange(1, 16))
@@ -734,6 +787,9 @@ def cmd_update_service(name, rev, desired):
         task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
         rev = register_task_def(task_def)
 
+    #pprint.pprint(task_def)
+    #raise
+
 
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tUpdating {} using revision {}".format(name, rev) + reset)
@@ -741,7 +797,7 @@ def cmd_update_service(name, rev, desired):
     update_service(task_definition=taskdef, cluster=cluster, desired_count=desired, service_name=name)
 
 
-@main.command(name='delete')
+@cmd_service.command(name='delete')
 @click.argument('name')
 def cmd_delete(name):
     """Delete Service"""
