@@ -161,7 +161,7 @@ def print_ec2_instances(instances):
     header = ['Name', 'AvailabilityZone', 'PrivateIpAddress', 'ImageId', 'InstanceType', 'InstanceId', 'State', 'Age']
 
     data = [[
-        i['Name'],
+        i['Name'] if i['Name'] else '',
         i['AvailabilityZone'],
         i['PrivateIpAddress'],
         i['ImageId'],
@@ -170,6 +170,8 @@ def print_ec2_instances(instances):
         i['State'],
         humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - i['LaunchTime']),
     ] for i in instances]
+
+    data = sorted(data,key=lambda x:x[0])
 
     print_table(header, data)
 
