@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import json
 import yaml
 import click
 import logging
@@ -11,6 +12,7 @@ from prompt_toolkit import prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.validation import Validator, ValidationError
 from colored import fg, attr
+from jinja2 import Template
 import humanize
 import datetime
 import itertools
@@ -597,10 +599,39 @@ def cmd_stop_task(task):
 def get_default_region():
     return boto3.session.Session().region_name
 
-def get_task_def_from_file(file_path, cluster_name):
+def get_service_def_from_file(name, cluster_name):
+
+    file_path = "./services/{}/{}.yaml".format(cluster_name, name)
+
+    shared_config_path = "./services/{}.yaml".format(cluster_name)
+
+    shared_config = {
+        'Properties': {},
+        'LogConfiguration': {
+
+        }
+
+    }
+
+    if os.path.exists(shared_config_path):
+        with open(shared_config_path, 'r') as f:
+            shared_config = yaml.load(f)
+
+    shared_config['Properties'].update(
+        {
+            'CLUSTER_NAME': cluster_name,
+            'REGION': get_default_region()
+        }
+    )
 
     with open(file_path, 'r') as f:
-        service_def = yaml.load(f)
+        service_def = f.read()
+
+        template = Template(service_def)
+
+        service_def = template.render(shared_config['Properties'])
+
+        service_def = yaml.load(service_def)
 
     task_def =  service_def['TaskDefinition']
 
@@ -625,21 +656,24 @@ def get_task_def_from_file(file_path, cluster_name):
 
     task_def = change_keys(task_def, convert=lowerCaseFirstLetter)
 
-    region = get_default_region()
+    log_config = change_keys(shared_config['LogConfiguration'], convert=lowerCaseFirstLetter)
 
-    logConfig = {
-        'logDriver' : 'awslogs',
-        'options' : {
-            'awslogs-group': "{}-services".format(cluster_name),
-            'awslogs-stream-prefix': task_def['family'],
-            'awslogs-region': region
-        }
-    }
+    log_config = json.dumps(log_config)
+
+    template = Template(log_config)
+
+    shared_config['Properties'].update({'FAMILY': task_def['family']})
+
+    log_config = template.render(shared_config['Properties'])
+
+    log_config = json.loads(log_config)
 
     for cd in task_def['containerDefinitions']:
-        cd['logConfiguration'] = logConfig
+        cd['logConfiguration'] = log_config
 
-    return task_def
+    service_def['TaskDefinition'] = task_def
+
+    return service_def
 
 def create_log_group(name):
     result = logs.describe_log_groups(logGroupNamePrefix=name)['logGroups']
@@ -759,8 +793,11 @@ def cmd_create_service(name, rev, desired):
     cluster = get_default_cluster()
 
     if not rev:
-        task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
-        rev = register_task_def(task_def)
+        service_def = get_service_def_from_file(name, cluster)
+        rev = register_task_def(service_def['TaskDefinition'])
+
+        if 'Desired' in service_def:
+            desired = int(service_def['Desired'])
 
     # todo: not hardcode this!
     placement_strategy = [
@@ -771,7 +808,7 @@ def cmd_create_service(name, rev, desired):
     ]
 
     taskdef = "{}:{}".format(name, rev) if rev else name
-    print(fg('green') + "\n\tCreating {} with revision {}".format(name, rev) + reset)
+    print(fg('green') + "\n\tCreating {} (Desired={}) with revision {}".format(name, desired, rev) + reset)
 
     create_service(task_definition=taskdef, placement_strategy=placement_strategy, cluster=cluster, desired_count=desired, service_name=name)
 
@@ -786,17 +823,27 @@ def cmd_update_service(name, rev, desired):
     cluster = get_default_cluster()
 
     if not rev:
-        task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
-        rev = register_task_def(task_def)
+        service_def = get_service_def_from_file(name, cluster)
+        rev = register_task_def(service_def['TaskDefinition'])
 
-    #pprint.pprint(task_def)
-    #raise
-
+        if 'Desired' in service_def:
+            desired = int(service_def['Desired'])
 
     taskdef = "{}:{}".format(name, rev) if rev else name
-    print(fg('green') + "\n\tUpdating {} using revision {}".format(name, rev) + reset)
+    print(fg('green') + "\n\tUpdating {} (Desired={}) using revision {}".format(name, desired, rev) + reset)
 
     update_service(task_definition=taskdef, cluster=cluster, desired_count=desired, service_name=name)
+
+@cmd_service.command(name='describe')
+@click.argument('name')
+def cmd_describe_service(name):
+    """Describe Service"""
+
+    cluster = get_default_cluster()
+
+    service_def = get_service_def_from_file(name, cluster)
+
+    pprint.pprint(service_def)
 
 
 @cmd_service.command(name='delete')
