@@ -767,7 +767,7 @@ def cmd_list_repos():
     """List Repos"""
 
     print(fg('green') + "\n\tRegion: {}".format(boto3.session.Session().region_name) + reset)
-    
+
     repos = get_container_repos()
     print_container_repos(repos)
 
