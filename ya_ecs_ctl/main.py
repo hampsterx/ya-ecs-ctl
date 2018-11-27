@@ -299,7 +299,7 @@ def print_container_repos(repos):
         return ", ".join(tagged)
 
     data = [[
-        r['name'].split("/")[-1],
+        r['name'],
         format_latest_image(r['images']),
         format_recent_tag_images(r['images'])
     ] for r in repos]
@@ -763,13 +763,44 @@ def cmd_repos():
 
 
 @cmd_repos.command(name='ls')
-def cmd_list_images():
+def cmd_list_repos():
     """List Repos"""
 
-    #cluster = get_default_cluster()
-
+    print(fg('green') + "\n\tRegion: {}".format(boto3.session.Session().region_name) + reset)
+    
     repos = get_container_repos()
     print_container_repos(repos)
+
+
+@cmd_repos.command(name='create')
+@click.argument('name')
+def cmd_create_repo(name):
+    """Create Repo"""
+
+    result = ecr.create_repository(repositoryName=name)
+
+    if result['ResponseMetadata']['HTTPStatusCode'] == 200:
+        print(fg('green') + "\n\tCreated {}".format(result['repository']['repositoryUri']) + reset)
+    else:
+        pprint.pprint(result)
+
+@cmd_repos.command(name='delete')
+@click.argument('name')
+@click.option('--force', is_flag=True)
+def cmd_delete_repo(name, force):
+    """Delete Repo"""
+
+    try:
+        result = ecr.delete_repository(repositoryName=name, force=force)
+
+        if result['ResponseMetadata']['HTTPStatusCode'] == 200:
+            print(fg('green') + "\n\tDeleted OK" + reset)
+
+    except Exception as e:
+        if "cannot be deleted because it still contains images" in str(e):
+            print(fg('red') + "\n\t" + "Repo {} contains images. use --force flag".format(name) + reset)
+        else:
+            print(fg('red') + "\n\t" + str(e) + reset)
 
 
 @main.group(name='service')
