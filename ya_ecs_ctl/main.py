@@ -65,6 +65,7 @@ def dump(data):
     pprint.pprint(data)
 
 
+ecr = boto3.client('ecr')
 ecs = boto3.client('ecs')
 ec2 = boto3.client('ec2')
 elb = boto3.client('elbv2')
@@ -252,6 +253,56 @@ def print_container_instances(instances):
         "{}/{}".format((i['registered.CPU'] - i['remaining.CPU']), i['registered.CPU']),
         "{}/{}".format((i['registered.MEMORY'] - i['remaining.MEMORY']), i['registered.MEMORY']),
     ] for i in instances]
+
+    print_table(header, data)
+
+
+def get_container_repos():
+
+    repos = ecr.describe_repositories(maxResults=100)['repositories']
+
+    repos = [{'name' : r['repositoryName']} for r in repos]
+
+    for r in repos:
+
+
+        images = ecr.describe_images(repositoryName=r['name'], maxResults=100)
+
+        if 'nextToken' in images:
+            # todo
+            raise NotImplementedError()
+
+        images = images['imageDetails']
+
+        r['images'] = [{'tags': i.get('imageTags',[]), 'digest': i['imageDigest'], 'size': i['imageSizeInBytes'], 'date': i['imagePushedAt']} for i in images]
+
+    return repos
+
+
+def print_container_repos(repos):
+
+    header = ['Name', 'Latest', 'Recent Tags']
+
+    def format_latest_image(images):
+        latest = sorted([i for i in images if 'latest' in i['tags']], key=lambda x:x['date'])
+
+        return "({}) {}".format(latest[0]['digest'].split("sha256:")[-1][0:8], humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - latest[0]['date']).rjust(16)) if latest else ""
+
+    def format_recent_tag_images(images):
+        tagged = sorted([i for i in images if 'latest' not in i['tags'] and i['tags']], key=lambda x: x['date'])[0:3]
+
+        if not tagged:
+            return ""
+
+        tagged = ["({}) [{}] {}".format(t['digest'].split("sha256:")[-1][0:8], ",".join(t['tags']), humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - t['date'])) for t in tagged]
+
+        return ", ".join(tagged)
+
+    data = [[
+        r['name'].split("/")[-1],
+        format_latest_image(r['images']),
+        format_recent_tag_images(r['images'])
+    ] for r in repos]
 
     print_table(header, data)
 
@@ -553,8 +604,8 @@ def cmd_register(name):
 
     cluster = get_default_cluster()
 
-    task_def = get_task_def_from_file("./services/{}.yaml".format(name), cluster)
-    rev = register_task_def(task_def)
+    service_def = get_service_def_from_file(name, cluster)
+    rev = register_task_def(service_def['TaskDefinition'])
 
     print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
 
@@ -702,6 +753,23 @@ def register_task_def(task_def):
         raise Exception()
 
     return result['taskDefinition']['revision']
+
+@main.group(name='repo')
+def cmd_repos():
+    """
+    Interact with (Container) Repos
+    """
+    pass
+
+
+@cmd_repos.command(name='ls')
+def cmd_list_images():
+    """List Repos"""
+
+    #cluster = get_default_cluster()
+
+    repos = get_container_repos()
+    print_container_repos(repos)
 
 
 @main.group(name='service')
