@@ -898,11 +898,14 @@ def cmd_create_service(name, rev, desired):
         if 'Desired' in service_def:
             desired = int(service_def['Desired'])
 
-    # todo: not hardcode this!
     placement_strategy = [
         {
             'type': 'spread',
             'field': 'attribute:ecs.availability-zone'
+        },
+        {
+            "field": "instanceId",
+            "type": "spread"
         }
     ]
 
