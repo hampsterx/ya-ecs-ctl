@@ -390,6 +390,7 @@ def print_services(services):
     header = ['Service Name', 'Task Def', 'Launch Type', 'Desired', 'Running', 'Pending', 'Status', 'Created', 'Deployments (des/pend/run']
 
     def format_deployments(deployments):
+
         result = []
         for d in deployments:
             updated_at = humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - d['updatedAt'])
@@ -435,14 +436,28 @@ def delete_service(cluster, service_name):
     return True
 
 
-def create_service(cluster, service_name, placement_strategy=None, task_definition=None, desired_count=None):
+def create_service(cluster, service_name,
+                   placement_strategy=None,
+                   placement_constraints=None,
+                   scheduling_strategy=None,
+                   task_definition=None, desired_count=None):
     params = {}
 
-    if desired_count is not None:
-        params['desiredCount'] = desired_count
+    if scheduling_strategy != 'DAEMON':
 
-    if placement_strategy is not None:
-        params['placementStrategy'] = placement_strategy
+        if desired_count is not None:
+            params['desiredCount'] = desired_count
+
+        if placement_strategy is not None:
+            params['placementStrategy'] = placement_strategy
+
+    if scheduling_strategy is not None:
+        params['schedulingStrategy'] = scheduling_strategy
+
+    if placement_constraints is not None:
+        params["placementConstraints"] = [
+            {'type': pc['Type'], 'expression': pc['Expression']} for pc in placement_constraints
+        ]
 
     params['taskDefinition'] = task_definition
 
@@ -455,14 +470,18 @@ def create_service(cluster, service_name, placement_strategy=None, task_definiti
     return True
 
 
-def update_service(cluster, service_name, task_definition=None, force_new_deployment=None, desired_count=None):
+def update_service(cluster, service_name, task_definition=None, scheduling_strategy=None, force_new_deployment=None, desired_count=None):
     params = {}
 
     if force_new_deployment:
         params['forceNewDeployment'] = True
 
-    if desired_count is not None:
-        params['desiredCount'] = desired_count
+    if scheduling_strategy != 'DAEMON':
+        if desired_count is not None:
+            params['desiredCount'] = desired_count
+
+        if scheduling_strategy is not None:
+            params['schedulingStrategy'] = scheduling_strategy
 
     if task_definition is not None:
         params['taskDefinition'] = task_definition
@@ -895,6 +914,10 @@ def cmd_create_service(name, rev, desired):
         service_def = get_service_def_from_file(name, cluster)
         rev = register_task_def(service_def['TaskDefinition'])
 
+        scheduling_strategy = "REPLICA"
+        if "SchedulingStrategy" in service_def:
+            scheduling_strategy = service_def["SchedulingStrategy"]
+
         if 'Desired' in service_def:
             desired = int(service_def['Desired'])
 
@@ -909,10 +932,17 @@ def cmd_create_service(name, rev, desired):
         }
     ]
 
+    placement_constraints = service_def.get("PlacementConstraints", None)
+
+
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tCreating {} (Desired={}) with revision {}".format(name, desired, rev) + reset)
 
-    create_service(task_definition=taskdef, placement_strategy=placement_strategy, cluster=cluster, desired_count=desired, service_name=name)
+    create_service(task_definition=taskdef,
+                   placement_strategy=placement_strategy,
+                   placement_constraints=placement_constraints,
+                   scheduling_strategy=scheduling_strategy,
+                   cluster=cluster, desired_count=desired, service_name=name)
 
 
 @cmd_service.command(name='update')
@@ -928,13 +958,17 @@ def cmd_update_service(name, rev, desired):
         service_def = get_service_def_from_file(name, cluster)
         rev = register_task_def(service_def['TaskDefinition'])
 
+        scheduling_strategy = "REPLICA"
+        if "SchedulingStrategy" in service_def:
+            scheduling_strategy = service_def["SchedulingStrategy"]
+
         if 'Desired' in service_def:
             desired = int(service_def['Desired'])
 
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tUpdating {} (Desired={}) using revision {}".format(name, desired, rev) + reset)
 
-    update_service(task_definition=taskdef, cluster=cluster, desired_count=desired, service_name=name)
+    update_service(task_definition=taskdef, cluster=cluster, scheduling_strategy=scheduling_strategy, desired_count=desired, service_name=name)
 
 @cmd_service.command(name='describe')
 @click.argument('name')
@@ -957,8 +991,13 @@ def cmd_delete(name):
 
     print(fg('red') + "\n\tDeleting {}".format(name) + reset)
 
+    from botocore.exceptions import ClientError
+
     # Scale down first
-    update_service(desired_count=0, cluster=cluster, service_name=name)
+    try:
+        update_service(desired_count=0, cluster=cluster, service_name=name)
+    except ClientError:
+        pass
 
     delete_service(cluster=cluster, service_name=name)
 
