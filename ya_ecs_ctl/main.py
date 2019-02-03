@@ -480,9 +480,6 @@ def update_service(cluster, service_name, task_definition=None, scheduling_strat
         if desired_count is not None:
             params['desiredCount'] = desired_count
 
-        if scheduling_strategy is not None:
-            params['schedulingStrategy'] = scheduling_strategy
-
     if task_definition is not None:
         params['taskDefinition'] = task_definition
 
