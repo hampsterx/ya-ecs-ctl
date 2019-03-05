@@ -1,0 +1,35 @@
+Desired: 0
+LaunchType: "FARGATE"
+Schedule:
+  FixedInterval: "5m"
+  RoleARN: "arn:aws:iam::{your account ID}:role/ecsEventsRole"
+
+NetworkConfiguration:
+    AwsvpcConfiguration:
+      Subnets:
+        - "subnet-blah"
+      SecurityGroups:
+        - "sg-blah"
+
+TaskDefinition:
+  Family: my-app-on-schedule
+  NetworkMode: "awsvpc"
+  ExecutionRoleArn: "arn:aws:iam::{your account ID}:role/ecsTaskExecutionRole"
+  Cpu: "256"
+  Memory: "512"
+  RequiresCompatibilities:
+    - "FARGATE"
+  ContainerDefinitions:
+    - Name: my-app-on-schedule
+      Essential: true
+      Image: "ecr_arn..."
+      Command: ["/app/entrypoint.sh","python", "/app/main.py", "fetch"]
+      HealthCheck:
+        Command: [ "CMD-SHELL", "exit 0" ]
+        Interval: 10
+        Retries: 2
+        StartPeriod: 5
+        Timeout: 5
+      Environment:
+       - Name : TZ
+         Value: "Pacific/Auckland"

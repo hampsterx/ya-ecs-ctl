@@ -5,5 +5,5 @@ dist
 build
 notes.txt
 
-services
+/services
 *.conf

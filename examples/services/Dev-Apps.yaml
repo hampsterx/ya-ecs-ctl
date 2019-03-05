@@ -1,0 +1,11 @@
+# Shared Settings for Dev-Apps Cluster
+Properties:
+  MY_ENV: "123"
+
+LogConfiguration:
+  LogDriver: "awslogs"
+  Options:
+    awslogs-group: "{{CLUSTER_NAME}}-services"
+    awslogs-stream-prefix: "{{FAMILY}}"
+    awslogs-region: "{{REGION}}"
+

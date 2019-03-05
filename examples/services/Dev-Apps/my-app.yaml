@@ -1,0 +1,19 @@
+Desired: 2
+TaskDefinition:
+  Family: my-app
+  ContainerDefinitions:
+    - Name: my-app
+      Essential: true
+      Image: "ecr_arn..."
+      Memory: 256
+      PortMappings:
+        - ContainerPort: 8080
+      HealthCheck:
+        Command: [ "CMD-SHELL", "curl -f http://localhost:8080 || exit 1" ]
+        Interval: 10
+        Retries: 2
+        StartPeriod: 5
+        Timeout: 5
+      Environment:
+       - Name: MY_ENV
+         Value: "abc"
