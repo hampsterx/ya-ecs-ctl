@@ -6,16 +6,15 @@ import click
 import logging
 import boto3
 import pprint
-from terminaltables import AsciiTable
+
 from easysettings import JSONSettings as Settings
 from prompt_toolkit import prompt
-from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.validation import Validator, ValidationError
-from colored import fg, attr
+from ya_ecs_ctl.utils import ChoicesCompleter, ChoicesValidator, lowerCaseFirstLetter, change_keys, chunks, dump, reset, print_table
+from botocore.exceptions import ClientError
+from colored import fg
 from jinja2 import Template
 import humanize
 import datetime
-import itertools
 
 settings = Settings()
 
@@ -26,51 +25,15 @@ else:
     settings.load(settings_file)
 
 
-
-class ChoicesValidator(Validator):
-    def __init__(self, choices):
-        self.choices = choices
-
-    def validate(self, document):
-        text = document.text
-
-        if text not in self.choices:
-            raise ValidationError(message='Use Arrow down key to select from the list', cursor_position=0)
-
-
-class ChoicesCompleter(Completer):
-    def __init__(self, choices):
-        self.choices = choices
-
-    def get_completions(self, document, complete_event):
-        for c in self.choices:
-            if c.lower().startswith(document.text.lower()):
-                yield Completion(c, start_position=-len(document.text))
-
-
-def chunks(iterable,size):
-    it = iter(iterable)
-    chunk = tuple(itertools.islice(it,size))
-    while chunk:
-        yield chunk
-        chunk = tuple(itertools.islice(it,size))
-
-# ugly
-reset = attr('reset')
-
 log = logging.getLogger(__name__)
 
-
-def dump(data):
-    pprint.pprint(data)
-
-
+# Boto objects
 ecr = boto3.client('ecr')
 ecs = boto3.client('ecs')
 ec2 = boto3.client('ec2')
 elb = boto3.client('elbv2')
+events = boto3.client('events')
 logs = boto3.client('logs')
-
 
 
 def get_cluster_ids(ecs):
@@ -81,10 +44,6 @@ def get_cluster_ids(ecs):
 def get_clusters_info(cluster_ids):
     return ecs.describe_clusters(clusters=cluster_ids)['clusters']
 
-def print_table(header, data):
-    print("")
-    print(AsciiTable([header] + data).table)
-    print("")
 
 
 def print_clusters_info(clusters_info):
@@ -125,6 +84,19 @@ def get_default_cluster():
     print_msg_success("Cluster: {}".format(cluster))
 
     return cluster
+
+def get_cluster_arn(name):
+
+    clusters = ecs.list_clusters()['clusterArns']
+
+    cluster = [c for c in clusters if c.endswith("/{}".format(name))]
+
+    if cluster:
+        return cluster[0]
+
+    return None
+
+
 
 def format_instances(reservations):
 
@@ -424,21 +396,105 @@ def print_task_def_list(task_def_ids):
 
     print_table(header, data)
 
-
-
-def delete_service(cluster, service_name):
-    result = ecs.delete_service(service=service_name, cluster=cluster)
-
-    status = result['ResponseMetadata']['HTTPStatusCode']
+def assert200Response(response):
+    status = response['ResponseMetadata']['HTTPStatusCode']
     if status != 200:
         raise Exception("Something went wrong: status={}".format(status))
 
+def delete_service(cluster, service_name):
+    response = ecs.delete_service(service=service_name, cluster=cluster)
+
+    assert200Response(response)
+
     return True
+
+def delete_schedule(name):
+
+    try:
+        response = events.list_targets_by_rule(
+            Rule=name
+        )
+    except events.exceptions.ResourceNotFoundException:
+        print(fg('red') + "\n\t" + "Schedule not found" + reset)
+        return
+
+    assert200Response(response)
+
+    target_ids = [t['Id'] for t in response['Targets']]
+
+    if target_ids:
+        response = events.remove_targets(
+            Rule=name,
+            Ids=target_ids
+        )
+
+        assert200Response(response)
+
+    response = events.delete_rule(
+        Name=name,
+    )
+
+    assert200Response(response)
+
+def create_schedule_expression(fixed_interval=None):
+
+    if fixed_interval:
+        if fixed_interval.endswith("m"):
+            return "rate({} minutes)".format(fixed_interval.split("m")[0])
+
+
+def create_schedule(name,role_arn, cluster_arn, task_arn, network_configuration, fixed_interval=None):
+
+    schedule = create_schedule_expression(fixed_interval)
+
+    response = events.put_rule(
+        Name=name,
+        ScheduleExpression=schedule,
+        State='ENABLED',
+        Description="ECS Task {} on {}".format(name, fixed_interval),
+    )
+
+    assert200Response(response)
+
+    if network_configuration:
+        if "AwsvpcConfiguration" not in network_configuration:
+            raise NotImplementedError("Expected AwsvpcConfiguration inside NetworkConfiguration")
+
+        subnets = network_configuration['AwsvpcConfiguration']['Subnets']
+        security_groups = network_configuration['AwsvpcConfiguration']['SecurityGroups']
+
+        response = events.put_targets(
+        Rule=name,
+        Targets=[
+            {
+                'Id': name,
+                'Arn': cluster_arn,
+                "RoleArn": role_arn,
+                "EcsParameters": {
+                    "TaskDefinitionArn": task_arn,
+                    "TaskCount": 1,
+                    "LaunchType": "FARGATE",
+                    "NetworkConfiguration": {
+                        "awsvpcConfiguration": {
+                            "Subnets": subnets,
+                            "SecurityGroups": security_groups,
+                            "AssignPublicIp": "DISABLED"
+                        }
+                    },
+                    "PlatformVersion": "LATEST"
+                }
+            }
+        ]
+    )
+
+    assert200Response(response)
 
 
 def create_service(cluster, service_name,
                    placement_strategy=None,
+                   launch_type=None,
                    placement_constraints=None,
+                   network_configuration=None,
                    scheduling_strategy=None,
                    task_definition=None, desired_count=None):
     params = {}
@@ -459,15 +515,26 @@ def create_service(cluster, service_name,
             {'type': pc['Type'], 'expression': pc['Expression']} for pc in placement_constraints
         ]
 
+    if network_configuration:
+        aws_vpc_config = network_configuration['AwsvpcConfiguration']
+
+        params['networkConfiguration'] = {
+            'awsvpcConfiguration' : {
+                'subnets': aws_vpc_config.pop("Subnets") ,
+                'securityGroups': aws_vpc_config.pop("SecurityGroups")
+            }
+        }
+
+    if launch_type:
+        params['launchType'] = launch_type
+
     params['taskDefinition'] = task_definition
 
-    result = ecs.create_service(serviceName=service_name, cluster=cluster, **params)
+    # print(json.dumps(params,indent=True))
 
-    status = result['ResponseMetadata']['HTTPStatusCode']
-    if status != 200:
-        raise Exception("Something went wrong: status={}".format(status))
+    response = ecs.create_service(serviceName=service_name, cluster=cluster, **params)
 
-    return True
+    assert200Response(response)
 
 
 def update_service(cluster, service_name, task_definition=None, scheduling_strategy=None, force_new_deployment=None, desired_count=None):
@@ -621,7 +688,9 @@ def cmd_register(name):
     cluster = get_default_cluster()
 
     service_def = get_service_def_from_file(name, cluster)
-    rev = register_task_def(service_def['TaskDefinition'])
+    task_arn = register_task_def(service_def['TaskDefinition'])
+    rev = task_arn.split(":")[-1]
+
 
     print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
 
@@ -702,25 +771,6 @@ def get_service_def_from_file(name, cluster_name):
 
     task_def =  service_def['TaskDefinition']
 
-    def lowerCaseFirstLetter(str):
-        return str[0].lower() + str[1:]
-
-    def change_keys(obj, convert):
-        """
-        Recursively goes through the dictionary obj and replaces keys with the convert function.
-        """
-        if isinstance(obj, (str, int, float)):
-            return obj
-        if isinstance(obj, dict):
-            new = obj.__class__()
-            for k, v in obj.items():
-                new[convert(k)] = change_keys(v, convert)
-        elif isinstance(obj, (list, set, tuple)):
-            new = obj.__class__(change_keys(v, convert) for v in obj)
-        else:
-            return obj
-        return new
-
     task_def = change_keys(task_def, convert=lowerCaseFirstLetter)
 
     log_config = change_keys(shared_config['LogConfiguration'], convert=lowerCaseFirstLetter)
@@ -768,7 +818,7 @@ def register_task_def(task_def):
         print(result['ResponseMetadata'])
         raise Exception()
 
-    return result['taskDefinition']['revision']
+    return result['taskDefinition']['taskDefinitionArn']
 
 @main.group(name='repo')
 def cmd_repos():
@@ -900,23 +950,24 @@ def cmd_redeploy(name):
 
 @cmd_service.command(name='create')
 @click.argument('name')
-@click.option('--rev', type=click.IntRange(0, 1000))
-@click.option('--desired', default=2, type=click.IntRange(1, 16))
-def cmd_create_service(name, rev, desired):
+@click.option('--desired', default=1, type=click.IntRange(1, 16))
+def cmd_create_service(name, desired):
     """Create Service"""
 
     cluster = get_default_cluster()
 
-    if not rev:
-        service_def = get_service_def_from_file(name, cluster)
-        rev = register_task_def(service_def['TaskDefinition'])
+    service_def = get_service_def_from_file(name, cluster)
 
-        scheduling_strategy = "REPLICA"
-        if "SchedulingStrategy" in service_def:
-            scheduling_strategy = service_def["SchedulingStrategy"]
+    task_arn = register_task_def(service_def['TaskDefinition'])
 
-        if 'Desired' in service_def:
-            desired = int(service_def['Desired'])
+    rev = task_arn.split(":")[-1]
+
+    scheduling_strategy = "REPLICA"
+    if "SchedulingStrategy" in service_def:
+        scheduling_strategy = service_def["SchedulingStrategy"]
+
+    if 'Desired' in service_def:
+        desired = int(service_def['Desired'])
 
     placement_strategy = [
         {
@@ -931,15 +982,43 @@ def cmd_create_service(name, rev, desired):
 
     placement_constraints = service_def.get("PlacementConstraints", None)
 
+    launch_type = service_def.get("LaunchType", None)
 
-    taskdef = "{}:{}".format(name, rev) if rev else name
-    print(fg('green') + "\n\tCreating {} (Desired={}) with revision {}".format(name, desired, rev) + reset)
+    network_configuration = service_def.get("NetworkConfiguration", None)
 
-    create_service(task_definition=taskdef,
+    print(fg('green') + "\n\tCreating Service {} (Desired={}) with revision {}".format(name, desired, rev) + reset)
+
+    create_service(task_definition="{}:{}".format(name, rev) if rev else name,
                    placement_strategy=placement_strategy,
                    placement_constraints=placement_constraints,
                    scheduling_strategy=scheduling_strategy,
+                   network_configuration=network_configuration,
+                   launch_type=launch_type,
                    cluster=cluster, desired_count=desired, service_name=name)
+
+    schedule = service_def.get("Schedule", None)
+
+    cluster_arn = get_cluster_arn(cluster)
+
+    if schedule:
+        schedule_name = "{}-{}".format(cluster, name)
+
+        fixed_interval = schedule.get("FixedInterval", None)
+
+        role_arn = schedule.get('RoleARN')
+
+        network_configuration = service_def.get("NetworkConfiguration", None)
+
+        print(fg('green') + "\n\tCreating Schedule {} ({}) with revision {}".format(schedule_name, fixed_interval if fixed_interval else "TODO", rev) + reset)
+
+        create_schedule(
+            name=schedule_name,
+            role_arn=role_arn,
+            task_arn=task_arn,
+            network_configuration=network_configuration,
+            cluster_arn=cluster_arn,
+            fixed_interval=fixed_interval,
+        )
 
 
 @cmd_service.command(name='update')
@@ -953,7 +1032,8 @@ def cmd_update_service(name, rev, desired):
 
     if not rev:
         service_def = get_service_def_from_file(name, cluster)
-        rev = register_task_def(service_def['TaskDefinition'])
+        task_arn = register_task_def(service_def['TaskDefinition'])
+        rev = task_arn.split(":")[-1]
 
         scheduling_strategy = "REPLICA"
         if "SchedulingStrategy" in service_def:
@@ -988,7 +1068,6 @@ def cmd_delete(name):
 
     print(fg('red') + "\n\tDeleting {}".format(name) + reset)
 
-    from botocore.exceptions import ClientError
 
     # Scale down first
     try:
@@ -997,6 +1076,14 @@ def cmd_delete(name):
         pass
 
     delete_service(cluster=cluster, service_name=name)
+
+    # delete schedule
+
+    service_def = get_service_def_from_file(name, cluster)
+
+    if "Schedule" in service_def:
+        schedule_name = "{}-{}".format(cluster, name)
+        delete_schedule(schedule_name)
 
 
 if __name__ == '__main__':

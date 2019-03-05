@@ -24,11 +24,78 @@ Commands:
   ci       Interact with Container Instances
   cluster  Interact with Cluster
   ec2      Interact with EC2 Instances
+  repo     Interact with (Container) Repos
   service  Interact with Service
   task     Interact with Task
 
 
 ```
+
+## Getting Started
+
+Ensure aws cli tool works and you have run aws configure. Uses boto3 and assumes the following ENVs are set:
+
+- AWS_ACCESS_KEY_ID
+- AWS_SECRET_ACCESS_KEY
+
+Your default region should be set. Verify it with
+
+    cat ~/.aws/config 
+    
+    [default]
+    region=us-west-1
+
+Run 
+
+    ecs service ls
+
+It will first ask you to select a default cluster.
+Currently this tool does not have a command to create one.
+
+This preference is saved here:
+
+    cat .settings.conf 
+    
+    {
+        "cluster": "Dev-Apps"
+    }
+
+
+Lets try that again..
+
+    ecs service ls
+
+	Cluster: Dev-Apps
+    
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
+    | Service Name           | Task Def                  | Launch Type | Desired | Running | Pending | Status | Created      | Deployments (des/pend/run |
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
+    | my-app                 | my-app:122                | EC2         | 2       | 2       | 0       | ACTIVE | 4 months ago | 2/0/2 6 days ago          |
+    | another-app            | another-app:1             | EC2         | 2       | 2       | 0       | ACTIVE | a day ago    | 2/0/2 a day ago           |
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
+
+### Service Commands
+
+    Usage: ecs service [OPTIONS] COMMAND [ARGS]...
+    
+      Interact with Service
+    
+    Options:
+      --help  Show this message and exit.
+    
+    Commands:
+      create    Create Service
+      delete    Delete Service
+      describe  Describe Service
+      ls        List Services
+      redeploy  Force redeployment of a Service
+      scale     Scale Service
+      tasks     List Tasks for Service
+      update    Update Service
+
+
+See "examples" folder for config structure of services    
+
 
 ## Alternatives..
 
