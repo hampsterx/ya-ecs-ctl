@@ -60,12 +60,12 @@ Lets try that again..
 
 	Cluster: Dev-Apps
     
-    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
-    | Service Name           | Task Def                  | Launch Type | Desired | Running | Pending | Status | Created      | Deployments (des/pend/run |
-    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
-    | my-app                 | my-app:122                | EC2         | 2       | 2       | 0       | ACTIVE | 4 months ago | 2/0/2 6 days ago          |
-    | another-app            | another-app:1             | EC2         | 2       | 2       | 0       | ACTIVE | a day ago    | 2/0/2 a day ago           |
-    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+---------------------------+
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+----------------------------+
+    | Service Name           | Task Def                  | Launch Type | Desired | Running | Pending | Status | Created      | Deployments (des/pend/run) |
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+----------------------------+
+    | my-app                 | my-app:122                | EC2         | 2       | 2       | 0       | ACTIVE | 4 months ago | 2/0/2 6 days ago           |
+    | another-app            | another-app:1             | EC2         | 2       | 2       | 0       | ACTIVE | a day ago    | 2/0/2 a day ago            |
+    +------------------------+---------------------------+-------------+---------+---------+---------+--------+--------------+----------------------------+
 
 ### Service Commands
 
@@ -87,7 +87,8 @@ Lets try that again..
       update    Update Service
 
 
-See "examples" folder for config structure of services    
+See "examples" folder for config structure of services.
+Support is provided for FARGATE, Scheduled Tasks, etc.
 
 
 ## Alternatives..
