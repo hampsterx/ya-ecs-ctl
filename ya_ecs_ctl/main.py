@@ -359,7 +359,7 @@ def print_tasks(tasks):
 
 def print_services(services):
 
-    header = ['Service Name', 'Task Def', 'Launch Type', 'Desired', 'Running', 'Pending', 'Status', 'Created', 'Deployments (des/pend/run']
+    header = ['Service Name', 'Task Def', 'Launch Type', 'Desired', 'Running', 'Pending', 'Status', 'Created', 'Deployments (des/pend/run)']
 
     def format_deployments(deployments):
 

@@ -4,6 +4,6 @@ dist
 *.pyc
 build
 notes.txt
-*.yaml
+
 services
 *.conf
