@@ -6,7 +6,7 @@ import click
 import logging
 import boto3
 import pprint
-
+import copy
 from easysettings import JSONSettings as Settings
 from prompt_toolkit import prompt
 from ya_ecs_ctl.utils import ChoicesCompleter, ChoicesValidator, lowerCaseFirstLetter, change_keys, chunks, dump, reset, print_table
@@ -441,6 +441,10 @@ def create_schedule_expression(fixed_interval=None):
     if fixed_interval:
         if fixed_interval.endswith("m"):
             return "rate({} minutes)".format(fixed_interval.split("m")[0])
+        elif fixed_interval.endswith("h"):
+            return "rate({} hours)".format(fixed_interval.split("h")[0])
+
+    raise NotImplementedError("Dont know how to convert this schedule: {}".format(fixed_interval))
 
 
 def create_schedule(name,role_arn, cluster_arn, task_arn, network_configuration, fixed_interval=None):
@@ -499,24 +503,27 @@ def create_service(cluster, service_name,
                    task_definition=None, desired_count=None):
     params = {}
 
+    if launch_type:
+        params['launchType'] = launch_type
+
     if scheduling_strategy != 'DAEMON':
 
         if desired_count is not None:
             params['desiredCount'] = desired_count
 
-        if placement_strategy is not None:
+        if placement_strategy is not None and launch_type != "FARGATE":
             params['placementStrategy'] = placement_strategy
 
-    if scheduling_strategy is not None:
+    if scheduling_strategy is not None and launch_type != "FARGATE":
         params['schedulingStrategy'] = scheduling_strategy
 
-    if placement_constraints is not None:
+    if placement_constraints is not None and launch_type != "FARGATE":
         params["placementConstraints"] = [
             {'type': pc['Type'], 'expression': pc['Expression']} for pc in placement_constraints
         ]
 
     if network_configuration:
-        aws_vpc_config = network_configuration['AwsvpcConfiguration']
+        aws_vpc_config = copy.copy(network_configuration['AwsvpcConfiguration'])
 
         params['networkConfiguration'] = {
             'awsvpcConfiguration' : {
@@ -525,12 +532,10 @@ def create_service(cluster, service_name,
             }
         }
 
-    if launch_type:
-        params['launchType'] = launch_type
 
     params['taskDefinition'] = task_definition
 
-    # print(json.dumps(params,indent=True))
+    # dump(params)
 
     response = ecs.create_service(serviceName=service_name, cluster=cluster, **params)
 
@@ -911,14 +916,15 @@ def cmd_list_tasks(service):
     if task_ids:
         tasks = get_tasks_by_ids_and_cluster(task_ids, cluster)
 
-        container_instance_ids = [t['containerInstanceArn'] for t in tasks]
+        container_instance_ids = [t['containerInstanceArn'] for t in tasks if 'containerInstanceArn' in t]
 
-        results = get_container_instances_by_ids(ids=container_instance_ids, cluster=cluster)
+        if container_instance_ids:
+            results = get_container_instances_by_ids(ids=container_instance_ids, cluster=cluster)
 
-        container_instances_dict = {c['containerInstanceArn']:c for c in results}
+            container_instances_dict = {c['containerInstanceArn']:c for c in results}
 
-        for t in tasks:
-            t['container_instance'] = container_instances_dict[t['containerInstanceArn']]
+            for t in tasks:
+                t['container_instance'] = container_instances_dict[t['containerInstanceArn']]
 
         print_tasks(tasks)
 
