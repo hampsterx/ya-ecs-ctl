@@ -447,7 +447,7 @@ def create_schedule_expression(fixed_interval=None):
     raise NotImplementedError("Dont know how to convert this schedule: {}".format(fixed_interval))
 
 
-def create_schedule(name,role_arn, cluster_arn, task_arn, network_configuration, fixed_interval=None):
+def create_schedule(name,role_arn, launch_type, cluster_arn, task_arn, network_configuration, fixed_interval=None):
 
     schedule = create_schedule_expression(fixed_interval)
 
@@ -458,9 +458,7 @@ def create_schedule(name,role_arn, cluster_arn, task_arn, network_configuration,
         Description="ECS Task {} on {}".format(name, fixed_interval),
     )
 
-    assert200Response(response)
-
-    if network_configuration:
+    if launch_type== "FARGATE" and network_configuration:
         if "AwsvpcConfiguration" not in network_configuration:
             raise NotImplementedError("Expected AwsvpcConfiguration inside NetworkConfiguration")
 
@@ -468,28 +466,44 @@ def create_schedule(name,role_arn, cluster_arn, task_arn, network_configuration,
         security_groups = network_configuration['AwsvpcConfiguration']['SecurityGroups']
 
         response = events.put_targets(
-        Rule=name,
-        Targets=[
-            {
-                'Id': name,
-                'Arn': cluster_arn,
-                "RoleArn": role_arn,
-                "EcsParameters": {
-                    "TaskDefinitionArn": task_arn,
-                    "TaskCount": 1,
-                    "LaunchType": "FARGATE",
-                    "NetworkConfiguration": {
-                        "awsvpcConfiguration": {
-                            "Subnets": subnets,
-                            "SecurityGroups": security_groups,
-                            "AssignPublicIp": "DISABLED"
-                        }
-                    },
-                    "PlatformVersion": "LATEST"
+            Rule=name,
+            Targets=[
+                {
+                    'Id': name,
+                    'Arn': cluster_arn,
+                    "RoleArn": role_arn,
+                    "EcsParameters": {
+                        "TaskDefinitionArn": task_arn,
+                        "TaskCount": 1,
+                        "LaunchType": "FARGATE",
+                        "NetworkConfiguration": {
+                            "awsvpcConfiguration": {
+                                "Subnets": subnets,
+                                "SecurityGroups": security_groups,
+                                "AssignPublicIp": "DISABLED"
+                            }
+                        },
+                        "PlatformVersion": "LATEST"
+                    }
                 }
-            }
-        ]
-    )
+            ]
+        )
+    else:
+        response = events.put_targets(
+            Rule=name,
+            Targets=[
+                {
+                    'Id': name,
+                    'Arn': cluster_arn,
+                    "RoleArn": role_arn,
+                    "EcsParameters": {
+                        "TaskDefinitionArn": task_arn,
+                        "TaskCount": 1,
+                        "PlatformVersion": "LATEST"
+                    }
+                }
+            ]
+        )
 
     assert200Response(response)
 
@@ -498,6 +512,7 @@ def create_service(cluster, service_name,
                    placement_strategy=None,
                    launch_type=None,
                    placement_constraints=None,
+                   deployment_configuration=None,
                    network_configuration=None,
                    scheduling_strategy=None,
                    task_definition=None, desired_count=None):
@@ -521,6 +536,13 @@ def create_service(cluster, service_name,
         params["placementConstraints"] = [
             {'type': pc['Type'], 'expression': pc['Expression']} for pc in placement_constraints
         ]
+
+    if deployment_configuration is not None and launch_type != "FARGATE":
+        params["deploymentConfiguration"] = {}
+        if 'MaximumPercent' in deployment_configuration:
+            params["deploymentConfiguration"]['maximumPercent'] = deployment_configuration['MaximumPercent']
+        if 'MinimumHealthyPercent' in deployment_configuration:
+            params["deploymentConfiguration"]['minimumHealthyPercent'] = deployment_configuration['MinimumHealthyPercent']
 
     if network_configuration:
         aws_vpc_config = copy.copy(network_configuration['AwsvpcConfiguration'])
@@ -988,6 +1010,8 @@ def cmd_create_service(name, desired):
 
     placement_constraints = service_def.get("PlacementConstraints", None)
 
+    deployment_configuration = service_def.get("DeploymentConfiguration", None)
+
     launch_type = service_def.get("LaunchType", None)
 
     network_configuration = service_def.get("NetworkConfiguration", None)
@@ -997,6 +1021,7 @@ def cmd_create_service(name, desired):
     create_service(task_definition="{}:{}".format(name, rev) if rev else name,
                    placement_strategy=placement_strategy,
                    placement_constraints=placement_constraints,
+                   deployment_configuration=deployment_configuration,
                    scheduling_strategy=scheduling_strategy,
                    network_configuration=network_configuration,
                    launch_type=launch_type,
@@ -1021,6 +1046,7 @@ def cmd_create_service(name, desired):
             name=schedule_name,
             role_arn=role_arn,
             task_arn=task_arn,
+            launch_type=launch_type,
             network_configuration=network_configuration,
             cluster_arn=cluster_arn,
             fixed_interval=fixed_interval,
