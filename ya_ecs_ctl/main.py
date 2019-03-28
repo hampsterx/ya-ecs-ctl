@@ -499,7 +499,7 @@ def create_schedule(name,role_arn, launch_type, cluster_arn, task_arn, network_c
                     "EcsParameters": {
                         "TaskDefinitionArn": task_arn,
                         "TaskCount": 1,
-                        "PlatformVersion": "LATEST"
+                        "LaunchType": "EC2"
                     }
                 }
             ]
