@@ -337,22 +337,28 @@ def print_tasks(tasks):
 
         return " ".join(result)
 
-    data = [[
-        t['group'],
-        format_container_tasks(t['containers']),
-        t['taskDefinitionArn'].split(':task-definition/')[1],
-        format_container_ports(t['containers']),
-        t['container_instance']['ec2Detail']['Name'],
-        t['container_instance']['ec2Detail']['PrivateIpAddress'],
-        t['container_instance']['ecs.availability-zone'],
-        t['container_instance']['ecs.instance-type'],
-        t.get('connectivity', ''),
-        humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - t['connectivityAt']) if 'connectivityAt' in t else "",
-        t['memory'],
-        t['desiredStatus'],
-        t['healthStatus'],
-        t['lastStatus'],
-    ] for t in tasks]
+    data = []
+
+    for t in tasks:
+
+        item = [
+            t['group'],
+            format_container_tasks(t['containers']),
+            t['taskDefinitionArn'].split(':task-definition/')[1],
+            format_container_ports(t['containers']),
+            t['container_instance']['ec2Detail']['Name'] if "container_instance" in t else "NA",
+            t['container_instance']['ec2Detail']['PrivateIpAddress'] if "container_instance" in t else "NA",
+            t['container_instance']['ecs.availability-zone'] if "container_instance" in t else "NA",
+            t['container_instance']['ecs.instance-type'] if "container_instance" in t else "NA",
+            t.get('connectivity', ''),
+            humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - t['connectivityAt']) if 'connectivityAt' in t else "",
+            t['memory'],
+            t['desiredStatus'],
+            t['healthStatus'],
+            t['lastStatus'],
+        ]
+
+        data.append(item)
 
     print_table(header, data)
 
