@@ -784,7 +784,7 @@ def get_service_def_from_file(name, cluster_name):
 
     if os.path.exists(shared_config_path):
         with open(shared_config_path, 'r') as f:
-            shared_config = yaml.load(f)
+            shared_config = yaml.load(f, Loader=yaml.SafeLoader)
 
     shared_config['Properties'].update(
         {
@@ -800,7 +800,7 @@ def get_service_def_from_file(name, cluster_name):
 
         service_def = template.render(shared_config['Properties'])
 
-        service_def = yaml.load(service_def)
+        service_def = yaml.load(service_def, Loader=yaml.SafeLoader)
 
     task_def =  service_def['TaskDefinition']
 
