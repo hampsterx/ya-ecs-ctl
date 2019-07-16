@@ -442,26 +442,29 @@ def delete_schedule(name):
 
     assert200Response(response)
 
-def create_schedule_expression(fixed_interval=None):
+def create_schedule_expression(fixed_interval=None, cron_expression=None):
 
     if fixed_interval:
         if fixed_interval.endswith("m"):
             return "rate({} minutes)".format(fixed_interval.split("m")[0])
         elif fixed_interval.endswith("h"):
             return "rate({} hours)".format(fixed_interval.split("h")[0])
-
+    elif cron_expression:
+        if "cron" in cron_expression:
+            raise Exception("Just use the cron expression (eg xx) not cron(xx)")
+        return "cron({})".format(cron_expression)
     raise NotImplementedError("Dont know how to convert this schedule: {}".format(fixed_interval))
 
 
-def create_schedule(name,role_arn, launch_type, cluster_arn, task_arn, network_configuration, fixed_interval=None):
+def create_schedule(name,role_arn, launch_type, cluster_arn, task_arn, network_configuration, fixed_interval=None, cron_expression=None):
 
-    schedule = create_schedule_expression(fixed_interval)
+    schedule = create_schedule_expression(fixed_interval, cron_expression)
 
     response = events.put_rule(
         Name=name,
         ScheduleExpression=schedule,
         State='ENABLED',
-        Description="ECS Task {} on {}".format(name, fixed_interval),
+        Description="ECS Task {} on {}".format(name, schedule),
     )
 
     if launch_type== "FARGATE" and network_configuration:
@@ -1042,11 +1045,13 @@ def cmd_create_service(name, desired):
 
         fixed_interval = schedule.get("FixedInterval", None)
 
+        cron_expression = schedule.get("CronExpression", None)
+
         role_arn = schedule.get('RoleARN')
 
         network_configuration = service_def.get("NetworkConfiguration", None)
 
-        print(fg('green') + "\n\tCreating Schedule {} ({}) with revision {}".format(schedule_name, fixed_interval if fixed_interval else "TODO", rev) + reset)
+        print(fg('green') + "\n\tCreating Schedule {} ({}) with revision {}".format(schedule_name, fixed_interval if fixed_interval else cron_expression, rev) + reset)
 
         create_schedule(
             name=schedule_name,
@@ -1056,6 +1061,7 @@ def cmd_create_service(name, desired):
             network_configuration=network_configuration,
             cluster_arn=cluster_arn,
             fixed_interval=fixed_interval,
+            cron_expression=cron_expression
         )
 
 
