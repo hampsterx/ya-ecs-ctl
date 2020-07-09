@@ -548,7 +548,7 @@ def create_service(cluster, service_name,
         ]
 
     if loadbalancers:
-        params["loadBalancers"] = loadbalancers
+        params["loadBalancers"] = [change_keys(x, convert=lowerCaseFirstLetter) for x in loadbalancers]
 
     if deployment_configuration is not None and launch_type != "FARGATE":
         params["deploymentConfiguration"] = {}

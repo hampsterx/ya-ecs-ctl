@@ -8,7 +8,7 @@ NetworkConfiguration:
       Subnets:
         - "subnet-xxx"
 LoadBalancers:
-    - TargetGroupARN: arn:aws:elasticloadbalancing:eu-west-1:xx:targetgroup/test/xxx
+    - TargetGroupArn: arn:aws:elasticloadbalancing:eu-west-1:xx:targetgroup/test/xxx
       ContainerName: test
       ContainerPort: 8080
 TaskDefinition:
