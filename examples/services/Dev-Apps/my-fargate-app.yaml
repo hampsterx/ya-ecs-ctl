@@ -1,0 +1,56 @@
+LaunchType: FARGATE
+Desired: 1
+NetworkConfiguration:
+    AwsvpcConfiguration:
+      AssignPublicIp: DISABLED
+      SecurityGroups:
+        - "sg-xxx"
+      Subnets:
+        - "subnet-xxx"
+LoadBalancers:
+    - TargetGroupARN: arn:aws:elasticloadbalancing:eu-west-1:xx:targetgroup/test/xxx
+      ContainerName: test
+      ContainerPort: 8080
+TaskDefinition:
+  Family: test
+  RequiresCompatibilities: ["FARGATE"]
+  ExecutionRoleArn: arn:aws:iam::test:role/ecs
+  NetworkMode: awsvpc
+  Cpu: "512"
+  Memory: "1024"
+  ContainerDefinitions:
+    - Name: redis
+      Essential: true
+      Image: "redis:4.0.10"
+      Memory: 64
+      HealthCheck:
+        Command: [ "CMD-SHELL", "redis-cli ping || exit 1" ]
+        Interval: 5
+        Retries: 2
+        StartPeriod: 2
+        Timeout: 2
+      Ulimits:
+        - SoftLimit: 65536
+          HardLimit: 65536
+          Name: "nofile"
+      PortMappings:
+        - ContainerPort: 6379
+          Protocol: tcp
+    - Name: test
+      Essential: true
+      DependsOn:
+        - ContainerName: "redis"
+          Condition: "HEALTHY"
+      Image: "test.dkr.ecr.eu-west-1.amazonaws.com/test/test:latest"
+      EntryPoint: ["/app/entrypoint.sh"]
+      PortMappings:
+        - ContainerPort: 8080
+      HealthCheck:
+        Command: [ "CMD-SHELL", "curl -f http://localhost:8080/health-check || exit 1" ]
+        Interval: 10
+        Retries: 2
+        StartPeriod: 5
+        Timeout: 5
+      Environment:
+       - Name: TEST
+         Value: "123"
