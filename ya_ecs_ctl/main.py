@@ -520,6 +520,7 @@ def create_schedule(name,role_arn, launch_type, cluster_arn, task_arn, network_c
 def create_service(cluster, service_name,
                    placement_strategy=None,
                    launch_type=None,
+                   loadbalancers=None,
                    placement_constraints=None,
                    deployment_configuration=None,
                    network_configuration=None,
@@ -545,6 +546,9 @@ def create_service(cluster, service_name,
         params["placementConstraints"] = [
             {'type': pc['Type'], 'expression': pc['Expression']} for pc in placement_constraints
         ]
+
+    if loadbalancers:
+        params["loadBalancers"] = [change_keys(x, convert=lowerCaseFirstLetter) for x in loadbalancers]
 
     if deployment_configuration is not None and launch_type != "FARGATE":
         params["deploymentConfiguration"] = {}
@@ -1023,6 +1027,8 @@ def cmd_create_service(name, desired):
 
     launch_type = service_def.get("LaunchType", None)
 
+    loadbalancers = service_def.get("LoadBalancers", None)
+
     network_configuration = service_def.get("NetworkConfiguration", None)
 
     print(fg('green') + "\n\tCreating Service {} (Desired={}) with revision {}".format(name, desired, rev) + reset)
@@ -1034,6 +1040,7 @@ def cmd_create_service(name, desired):
                    scheduling_strategy=scheduling_strategy,
                    network_configuration=network_configuration,
                    launch_type=launch_type,
+                   loadbalancers=loadbalancers,
                    cluster=cluster, desired_count=desired, service_name=name)
 
     schedule = service_def.get("Schedule", None)

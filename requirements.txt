@@ -1,9 +1,9 @@
 click>=6.6
-boto3==1.9.97
+boto3>=1.14,<1.15
 terminaltables==3.1.0
 humanize==0.5.1
 EasySettings==2.1.0
 prompt-toolkit==2.0.4
-PyYAML==4.2b1
+PyYAML==5.3.1
 colored==1.3.5
 Jinja2>=2.8
