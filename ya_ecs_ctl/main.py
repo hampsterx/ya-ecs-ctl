@@ -7,6 +7,7 @@ import logging
 import boto3
 import pprint
 import copy
+from itertools import groupby
 from easysettings import JSONSettings as Settings
 from prompt_toolkit import prompt
 from ya_ecs_ctl.utils import ChoicesCompleter, ChoicesValidator, lowerCaseFirstLetter, change_keys, chunks, dump, reset, print_table
@@ -231,29 +232,33 @@ def print_container_instances(instances):
 
 def get_container_repos():
 
-    repos = ecr.describe_repositories(maxResults=100)['repositories']
+    maxResults = 100
+
+    repos = ecr.describe_repositories(maxResults=maxResults)['repositories']
 
     repos = [{'name' : r['repositoryName']} for r in repos]
 
     for r in repos:
 
-
         images = ecr.describe_images(repositoryName=r['name'], maxResults=100)
 
         if 'nextToken' in images:
-            # todo
-            raise NotImplementedError()
+            log.warning("Found 100+ images for {}. Consider pruning unused tags!".format(r['name']))
 
         images = images['imageDetails']
 
-        r['images'] = [{'tags': i.get('imageTags',[]), 'digest': i['imageDigest'], 'size': i['imageSizeInBytes'], 'date': i['imagePushedAt']} for i in images]
+        r['total'] = len(images) if len(images) < maxResults else "100+"
+        r['total_untagged'] = len([x for x in images if 'imageTags' not in x])
+        r['images'] = [{'tags': i.get('imageTags',[]), 'digest': i['imageDigest'], 'size': i['imageSizeInBytes'],
+                        'count': len(images),
+                        'date': i['imagePushedAt']} for i in images]
 
     return repos
 
 
 def print_container_repos(repos):
 
-    header = ['Name', 'Latest', 'Recent Tags']
+    header = ['Name', 'Latest', 'Recent Tags', 'Image Count', 'Untagged Count']
 
     def format_latest_image(images):
         latest = sorted([i for i in images if 'latest' in i['tags']], key=lambda x:x['date'])
@@ -273,7 +278,9 @@ def print_container_repos(repos):
     data = [[
         r['name'],
         format_latest_image(r['images']),
-        format_recent_tag_images(r['images'])
+        format_recent_tag_images(r['images']),
+        r['total'],
+        r['total_untagged']
     ] for r in repos]
 
     print_table(header, data)
@@ -722,7 +729,7 @@ def cmd_task():
 
 @cmd_task.command(name='register')
 @click.argument('name')
-def cmd_register(name):
+def cmd_task_register(name):
     """Register task definition"""
 
     cluster = get_default_cluster()
@@ -734,11 +741,19 @@ def cmd_register(name):
 
     print(fg('green') + "\n\t{} now at revision {}".format(name, rev) + reset)
 
+@cmd_task.command(name='ls')
+def cmd_task_ls():
+    """List tasks"""
+
+    task_definitions = get_task_definitions_by_service()
+
+    print_task_definitions_by_service(task_definitions)
+
 
 @cmd_task.command(name='start')
 @click.argument('taskdefinition')
 @click.argument('containerInstance')
-def cmd_start_task(taskdefinition, containerinstance):
+def cmd_task_start(taskdefinition, containerinstance):
     """Start task"""
 
     cluster = get_default_cluster()
@@ -759,7 +774,7 @@ def cmd_start_task(taskdefinition, containerinstance):
 
 @cmd_task.command(name='stop')
 @click.argument('task')
-def cmd_stop_task(task):
+def cmd_task_stop(task):
     """Stop task"""
 
     cluster = get_default_cluster()
@@ -860,6 +875,43 @@ def register_task_def(task_def):
 
     return result['taskDefinition']['taskDefinitionArn']
 
+def get_task_definitions_by_service():
+
+    tasks = ecs.list_task_definitions(maxResults=100, sort="DESC")
+
+    # todo: pagination (nextToken)
+    if "nextToken" in tasks:
+        log.warning("Found 100+ task definitions. Consider pruning unused task definitions!")
+
+    results = []
+    for key, value in groupby(iterable=tasks['taskDefinitionArns'],
+                              key=lambda x: x.split("/")[-1].split(":")[0]):
+        items = list(value)
+        results.append(
+            {
+                'name': key,
+                'total': len(items),
+                'first': items[0].split(":")[-1],
+                'last': items[-1].split(":")[-1],
+            }
+        )
+
+    return results
+
+def print_task_definitions_by_service(task_definitions):
+    header = ['Service', 'Earliest', 'Oldest', 'Total']
+
+    data = [[
+        td['name'],
+        td['first'],
+        td['last'],
+        td['total'],
+
+    ] for td in task_definitions]
+
+    print_table(header, data)
+
+
 @main.group(name='repo')
 def cmd_repos():
     """
@@ -907,6 +959,24 @@ def cmd_delete_repo(name, force):
             print(fg('red') + "\n\t" + "Repo {} contains images. use --force flag".format(name) + reset)
         else:
             print(fg('red') + "\n\t" + str(e) + reset)
+
+
+@cmd_repos.command(name='prune')
+@click.argument('name')
+def cmd_prune_repo(name):
+    """Prune untagged images from Repo"""
+
+    try:
+        imageIds = ecr.list_images(repositoryName=name, maxResults=50, filter={'tagStatus': 'UNTAGGED'})
+
+        if imageIds:
+            result = ecr.batch_delete_image(repositoryName=name, imageIds=imageIds['imageIds'])
+
+            if result['ResponseMetadata']['HTTPStatusCode'] == 200:
+                print(fg('green') + "\n\tPruned {} images".format(len(imageIds['imageIds'])) + reset)
+
+    except Exception as e:
+        print(fg('red') + "\n\t" + str(e) + reset)
 
 
 @main.group(name='service')
