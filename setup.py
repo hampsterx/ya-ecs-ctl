@@ -21,7 +21,7 @@ setup(name='ya-ecs-ctl',
       packages=['ya_ecs_ctl'],
       install_requires=[
             'click>=6.6',
-            'boto3>=1.14,<1.15',
+            'boto3>=1.16,<1.17',
             'terminaltables==3.1.0',
             'humanize==0.5.1',
             'EasySettings==2.1.0',
