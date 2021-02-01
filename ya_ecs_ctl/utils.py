@@ -28,18 +28,18 @@ class ChoicesCompleter(Completer):
 def lowerCaseFirstLetter(str):
     return str[0].lower() + str[1:]
 
-def change_keys(obj, convert):
+def change_keys(obj, convert, recursive=True, level=0):
     """
     Recursively goes through the dictionary obj and replaces keys with the convert function.
     """
     if isinstance(obj, (str, int, float)):
         return obj
-    if isinstance(obj, dict):
+    if isinstance(obj, dict) and (recursive or level == 0):
         new = obj.__class__()
         for k, v in obj.items():
-            new[convert(k)] = change_keys(v, convert)
-    elif isinstance(obj, (list, set, tuple)):
-        new = obj.__class__(change_keys(v, convert) for v in obj)
+            new[convert(k)] = change_keys(v, convert, recursive, level=level+1)
+    elif isinstance(obj, (list, set, tuple)) and recursive:
+        new = obj.__class__(change_keys(v, convert, recursive, level=level+1) for v in obj)
     else:
         return obj
     return new
