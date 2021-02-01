@@ -828,7 +828,7 @@ def get_service_def_from_file(name, cluster_name):
 
     task_def = change_keys(task_def, convert=lowerCaseFirstLetter)
 
-    log_config = change_keys(shared_config['LogConfiguration'], convert=lowerCaseFirstLetter)
+    log_config = shared_config['LogConfiguration']
 
     log_config = json.dumps(log_config)
 
