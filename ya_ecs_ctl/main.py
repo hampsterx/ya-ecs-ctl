@@ -844,7 +844,8 @@ def get_service_def_from_file(name, cluster_name):
     log_config = json.loads(log_config)
 
     for cd in task_def['containerDefinitions']:
-        cd['logConfiguration'] = log_config
+        if 'logConfiguration' not in cd:
+            cd['logConfiguration'] = log_config
 
     service_def['TaskDefinition'] = task_def
 
