@@ -557,23 +557,18 @@ def create_service(cluster, service_name,
     if loadbalancers:
         params["loadBalancers"] = [change_keys(x, convert=lowerCaseFirstLetter) for x in loadbalancers]
 
-    if deployment_configuration is not None and launch_type != "FARGATE":
-        params["deploymentConfiguration"] = {}
-        if 'MaximumPercent' in deployment_configuration:
-            params["deploymentConfiguration"]['maximumPercent'] = deployment_configuration['MaximumPercent']
-        if 'MinimumHealthyPercent' in deployment_configuration:
-            params["deploymentConfiguration"]['minimumHealthyPercent'] = deployment_configuration['MinimumHealthyPercent']
+    if deployment_configuration is not None:
+        params["deploymentConfiguration"] = change_keys(deployment_configuration, convert=lowerCaseFirstLetter)
 
     if network_configuration:
         aws_vpc_config = copy.copy(network_configuration['AwsvpcConfiguration'])
 
         params['networkConfiguration'] = {
             'awsvpcConfiguration' : {
-                'subnets': aws_vpc_config.pop("Subnets") ,
+                'subnets': aws_vpc_config.pop("Subnets"),
                 'securityGroups': aws_vpc_config.pop("SecurityGroups")
             }
         }
-
 
     params['taskDefinition'] = task_definition
 
