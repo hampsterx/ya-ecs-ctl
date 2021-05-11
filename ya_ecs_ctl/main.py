@@ -325,15 +325,7 @@ def print_task_events(events, max_rows=10):
 
 def print_tasks(tasks):
 
-    header = ['Group', 'Task', 'TaskDef', 'Ports', 'Name', 'IP', 'Zone', 'Instance', 'Connectivity', 'connectivityAt', 'memory', 'Desired', 'Health', 'Status']
-
-    def format_container_tasks(containers):
-
-        result = []
-        for c in containers:
-            result.append("{}".format(c['taskArn'].split(":task/")[1]))
-
-        return " ".join(result)
+    header = ['Group', 'TaskDef', 'Ports', 'Name', 'IP', 'Zone', 'Instance', 'Connectivity', 'connectivityAt', 'memory', 'Desired', 'Health', 'Status']
 
     def format_container_ports(containers):
 
@@ -350,7 +342,6 @@ def print_tasks(tasks):
 
         item = [
             t['group'],
-            format_container_tasks(t['containers']),
             t['taskDefinitionArn'].split(':task-definition/')[1],
             format_container_ports(t['containers']),
             t['container_instance']['ec2Detail']['Name'] if "container_instance" in t else "NA",
