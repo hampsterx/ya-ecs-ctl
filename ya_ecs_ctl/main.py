@@ -523,11 +523,14 @@ def create_service(cluster, service_name,
                    deployment_configuration=None,
                    network_configuration=None,
                    scheduling_strategy=None,
-                   task_definition=None, desired_count=None):
+                   task_definition=None, desired_count=None, enable_execute_command=None):
     params = {}
 
     if launch_type:
         params['launchType'] = launch_type
+
+    if enable_execute_command:
+        params['enableExecuteCommand'] = True
 
     if scheduling_strategy != 'DAEMON':
 
@@ -570,8 +573,11 @@ def create_service(cluster, service_name,
     assert200Response(response)
 
 
-def update_service(cluster, service_name, task_definition=None, scheduling_strategy=None, force_new_deployment=None, desired_count=None):
+def update_service(cluster, service_name, task_definition=None, scheduling_strategy=None, force_new_deployment=None, desired_count=None, enable_execute_command=None):
     params = {}
+
+    if enable_execute_command:
+        params['enableExecuteCommand'] = True
 
     if force_new_deployment:
         params['forceNewDeployment'] = True
@@ -1070,6 +1076,8 @@ def cmd_create_service(name, desired):
     if 'Desired' in service_def:
         desired = int(service_def['Desired'])
 
+    enable_execute_command = service_def['EnableExecuteCommand'] if 'EnableExecuteCommand' in service_def else None
+
     placement_strategy = [
         {
             'type': 'spread',
@@ -1097,6 +1105,7 @@ def cmd_create_service(name, desired):
                    placement_strategy=placement_strategy,
                    placement_constraints=placement_constraints,
                    deployment_configuration=deployment_configuration,
+                   enable_execute_command=enable_execute_command,
                    scheduling_strategy=scheduling_strategy,
                    network_configuration=network_configuration,
                    launch_type=launch_type,
@@ -1141,6 +1150,8 @@ def cmd_update_service(name, rev, desired):
 
     cluster = get_default_cluster()
 
+    enable_execute_command = None
+
     if not rev:
         service_def = get_service_def_from_file(name, cluster)
         task_arn = register_task_def(service_def['TaskDefinition'])
@@ -1153,10 +1164,13 @@ def cmd_update_service(name, rev, desired):
         if 'Desired' in service_def:
             desired = int(service_def['Desired'])
 
+        if 'EnableExecuteCommand' in service_def:
+            enable_execute_command = service_def['EnableExecuteCommand']
+
     taskdef = "{}:{}".format(name, rev) if rev else name
     print(fg('green') + "\n\tUpdating {} (Desired={}) using revision {}".format(name, desired, rev) + reset)
 
-    update_service(task_definition=taskdef, cluster=cluster, scheduling_strategy=scheduling_strategy, desired_count=desired, service_name=name)
+    update_service(task_definition=taskdef, cluster=cluster, scheduling_strategy=scheduling_strategy, desired_count=desired, enable_execute_command=enable_execute_command, service_name=name)
 
 @cmd_service.command(name='describe')
 @click.argument('name')
