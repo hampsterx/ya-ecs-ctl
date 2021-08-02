@@ -344,10 +344,10 @@ def print_tasks(tasks):
             t['group'],
             t['taskDefinitionArn'].split(':task-definition/')[1],
             format_container_ports(t['containers']),
-            t['container_instance']['ec2Detail']['Name'] if "container_instance" in t else "NA",
-            t['container_instance']['ec2Detail']['PrivateIpAddress'] if "container_instance" in t else "NA",
-            t['container_instance']['ecs.availability-zone'] if "container_instance" in t else "NA",
-            t['container_instance']['ecs.instance-type'] if "container_instance" in t else "NA",
+            t['container_instance']['ec2Detail']['Name'] if "container_instance" in t and t['container_instance'] else "NA",
+            t['container_instance']['ec2Detail']['PrivateIpAddress'] if "container_instance" in t and t['container_instance'] else "NA",
+            t['container_instance']['ecs.availability-zone'] if "container_instance" in t and t['container_instance'] else "NA",
+            t['container_instance']['ecs.instance-type'] if "container_instance" in t and t['container_instance'] else "NA",
             t.get('connectivity', ''),
             humanize.naturaltime(datetime.datetime.now(datetime.timezone.utc) - t['connectivityAt']) if 'connectivityAt' in t else "",
             t['memory'],
@@ -363,7 +363,7 @@ def print_tasks(tasks):
 
 def print_services(services):
 
-    header = ['Service Name', 'Task Def', 'Launch Type', 'Desired', 'Running', 'Pending', 'Status', 'Created', 'Deployments (des/pend/run)']
+    header = ['Service Name', 'Task Def', 'Launch Type/CPs', 'Desired', 'Running', 'Pending', 'Status', 'Created', 'Deployments (des/pend/run)']
 
     def format_deployments(deployments):
 
@@ -379,7 +379,7 @@ def print_services(services):
     data = [[
         s['serviceName'],
         s['taskDefinition'].split(":task-definition/")[-1],
-        s['launchType'],
+        s.get('launchType', " ".join(["{} ({})".format(x['capacityProvider'], x['weight']) for x in s.get("capacityProviderStrategy", [])])),
         s['desiredCount'],
         s['runningCount'],
         s['pendingCount'],
@@ -1025,7 +1025,7 @@ def cmd_list_tasks(service):
             container_instances_dict = {c['containerInstanceArn']:c for c in results}
 
             for t in tasks:
-                t['container_instance'] = container_instances_dict[t['containerInstanceArn']]
+                t['container_instance'] = container_instances_dict.get(t.get('containerInstanceArn'))
 
         print_tasks(tasks)
 
